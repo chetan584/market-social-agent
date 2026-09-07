@@ -1,0 +1,61 @@
+name: Market social drafts
+on:
+  workflow_dispatch:
+    inputs:
+      session:
+        description: 'Trading date YYYY-MM-DD (blank for today)'
+        required: false
+        type: string
+  schedule:
+    - cron: '30 20 * * 1-5'
+    - cron: '30 21 * * 1-5'
+permissions:
+  contents: read
+concurrency:
+  group: market-social
+  cancel-in-progress: false
+jobs:
+  drafts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Eastern-time schedule
+        id: gate
+        env:
+          EVENT: ${{ github.event_name }}
+          CRON: ${{ github.event.schedule }}
+        run: |
+          python - <<'PY'
+          import os
+          from datetime import datetime
+          from zoneinfo import ZoneInfo
+          dst = bool(datetime.now(ZoneInfo('America/New_York')).dst())
+          expected = '30 20 * * 1-5' if dst else '30 21 * * 1-5'
+          run = os.environ['EVENT'] != 'schedule' or os.environ['CRON'] == expected
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write('run=' + str(run).lower() + '\n')
+          PY
+      - uses: actions/setup-python@v5
+        if: steps.gate.outputs.run == 'true'
+        with:
+          python-version: '3.12'
+      - name: Install free dependencies
+        if: steps.gate.outputs.run == 'true'
+        run: pip install 'yfinance>=0.2.54,<2' 'pandas-market-calendars>=4.6,<6' 'Pillow>=10.4,<13'
+      - name: Verify calculations
+        if: steps.gate.outputs.run == 'true'
+        run: python agent.py --self-test
+      - name: Generate market-close package
+        if: steps.gate.outputs.run == 'true'
+        env:
+          SESSION: ${{ inputs.session }}
+        run: python agent.py --date "$SESSION"
+      - name: Save draft package
+        if: always() && steps.gate.outputs.run == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: market-social-${{ github.run_id }}
+          path: market_posts/
+          retention-days: 5
+          if-no-files-found: warn
