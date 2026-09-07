@@ -55,7 +55,7 @@ def wrapped(draw, text, xy, size=30, color=WHITE, width=920):
                 line = trial
         draw.text((x, y), line, font=f, fill=color)
         y += size + 20
-    if y > 1160:
+    if y > (1280 if xy[1] >= 1180 else 1160):
         raise ValueError("Slide text exceeds safe layout area")
     return y
 
